@@ -15,7 +15,7 @@ namespace QueryRetrieve_SCP
         public static string AETitle { get; set; }
 
 
-        public static IDicomImageFinderService CreateFinderService => new StupidSlowFinderService();
+        public static IDicomImageFinderService CreateFinderService => new RISIMFinderService();
 
 
         public static void Start(int port, string aet)

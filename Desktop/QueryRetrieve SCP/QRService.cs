@@ -1,7 +1,4 @@
-﻿// Copyright (c) 2012-2019 fo-dicom contributors.
-// Licensed under the Microsoft Public License (MS-PL).
-
-using Dicom.Network;
+﻿using Dicom.Network;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -15,7 +12,8 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using DicomClient = Dicom.Network.Client.DicomClient;
-using System.Linq;
+using System.Data;
+
 
 namespace QueryRetrieve_SCP
 {
@@ -59,6 +57,7 @@ namespace QueryRetrieve_SCP
         public IPAddress RemoteIP { get; private set; }
 
 
+ 
         public QRService(INetworkStream stream, Encoding fallbackEncoding, Logger log) : base(stream, fallbackEncoding, log)
         {
             var pi = stream.GetType().GetProperty("Socket", BindingFlags.NonPublic | BindingFlags.Instance);
@@ -71,7 +70,7 @@ namespace QueryRetrieve_SCP
             {
                 RemoteIP = new IPAddress(new byte[] { 127, 0, 0, 1 });
             }
-        }
+         }
 
 
         public DicomCEchoResponse OnCEchoRequest(DicomCEchoRequest request)
@@ -149,7 +148,7 @@ namespace QueryRetrieve_SCP
         {
             var queryLevel = request.Level;
 
-            var matchingFiles = new List<string>();
+            DataTable resultsDt =null;
             IDicomImageFinderService finderService = QRServer.CreateFinderService;
 
             // a QR SCP has to define in a DICOM Conformance Statement for which dicom tags it can query
@@ -162,7 +161,7 @@ namespace QueryRetrieve_SCP
                         var patname = request.Dataset.GetSingleValueOrDefault(DicomTag.PatientName, string.Empty);
                         var patid = request.Dataset.GetSingleValueOrDefault(DicomTag.PatientID, string.Empty);
 
-                        matchingFiles = finderService.FindPatientFiles(patname, patid);
+                         resultsDt = finderService.FindPatientFiles(patname, patid);
                     }
                     break;
 
@@ -172,8 +171,11 @@ namespace QueryRetrieve_SCP
                         var patid = request.Dataset.GetSingleValueOrDefault(DicomTag.PatientID, string.Empty);
                         var accNr = request.Dataset.GetSingleValueOrDefault(DicomTag.AccessionNumber, string.Empty);
                         var studyUID = request.Dataset.GetSingleValueOrDefault(DicomTag.StudyInstanceUID, string.Empty);
+                        var StudyDate = request.Dataset.GetSingleValueOrDefault(DicomTag.StudyDate, string.Empty);
+                        var StudyTime = request.Dataset.GetSingleValueOrDefault(DicomTag.StudyTime, string.Empty);
 
-                        matchingFiles = finderService.FindStudyFiles(patname, patid, accNr, studyUID);
+                        resultsDt = finderService.FindStudyFiles(patname, patid, accNr, studyUID, StudyDate, StudyTime);
+                      
                     }
                     break;
 
@@ -186,7 +188,7 @@ namespace QueryRetrieve_SCP
                         var seriesUID = request.Dataset.GetSingleValueOrDefault(DicomTag.SeriesInstanceUID, string.Empty);
                         var modality = request.Dataset.GetSingleValueOrDefault(DicomTag.Modality, string.Empty);
 
-                        matchingFiles = finderService.FindSeriesFiles(patname, patid, accNr, studyUID, seriesUID, modality);
+                        resultsDt = finderService.FindSeriesFiles(patname, patid, accNr, studyUID, seriesUID, modality);
                     }
                     break;
 
@@ -194,35 +196,39 @@ namespace QueryRetrieve_SCP
                     yield return new DicomCFindResponse(request, DicomStatus.QueryRetrieveUnableToProcess);
                     yield break;
             }
-
-            // now read the required dicomtags from the matching files and return as results
-            foreach (var matchingFile in matchingFiles)
+                 
+            bool _autoValidateDICOM = Config.GetConfigBoolValueByName(Config.Key_Enable_DICOM_AutoValidate);
+            var columns = new List<string>();
+             foreach (DataColumn column in resultsDt.Columns)
             {
-                var dicomFile = DicomFile.Open(matchingFile);
-                var result = new DicomDataset();
+                columns.Add(column.ColumnName);
+            }
+            // now read the required dicomtags from the matching files and return as results
+            foreach (DataRow row in resultsDt.Rows)
+            {
+                var rtnResult = new DicomDataset();
+                rtnResult.AutoValidate = _autoValidateDICOM; //Not sure if we need this so se up as config value
+                //rtnResult.Clear(); //Could clear existing rather than create new.
                 foreach (var requestedTag in request.Dataset)
                 {
                     // most of the requested DICOM tags are stored in the DICOM files and therefore saved into a database.
                     // you can fill the responses by selecting the values from the database.
                     // also be aware that there are some requested DicomTags like "ModalitiesInStudy" or "NumberOfStudyRelatedInstances" 
                     // or "NumberOfPatientRelatedInstances" and so on which have to be calculated and cannot be read from a DICOM file.
-                    if (dicomFile.Dataset.Contains(requestedTag.Tag))
+                    string columnName = requestedTag.Tag.DictionaryEntry.Keyword.ToString();
+                    if (columns.Contains(columnName))
                     {
-                        dicomFile.Dataset.CopyTo(result, requestedTag.Tag);
+                       
+                        rtnResult.Add(requestedTag.Tag, row[columnName].ToString());
                     }
-                    // else if (requestedTag == DicomTag.NumberOfStudyRelatedInstances)
-                    // {
-                    //    ... somehow calculate how many instances are stored within the study
-                    //    result.Add(DicomTag.NumberOfStudyRelatedInstances, number);
-                    // } ....
                     else
                     {
-                        result.Add(requestedTag);
+                        rtnResult.Add(requestedTag);
                     }
                 }
-                yield return new DicomCFindResponse(request, DicomStatus.Pending) { Dataset = result };
+                yield return new DicomCFindResponse(request, DicomStatus.Pending) { Dataset = rtnResult };
             }
-
+            resultsDt.Dispose();
             yield return new DicomCFindResponse(request, DicomStatus.Success);
         }
 
@@ -232,9 +238,14 @@ namespace QueryRetrieve_SCP
             // cleanup, like cancel outstanding move- or get-jobs
         }
 
-
+        # region Code Stubs Currently  Out Of Scope for OnCMoveRequest and OnCGetRequest
         public IEnumerable<DicomCMoveResponse> OnCMoveRequest(DicomCMoveRequest request)
         {
+//sca currently not implemented so fail
+            yield return new DicomCMoveResponse(request, DicomStatus.NoSuchActionType);
+            yield return new DicomCMoveResponse(request, DicomStatus.ProcessingFailure);
+
+/*
             // the c-move request contains the DestinationAE. the data of this AE should be configured somewhere.
             if (request.DestinationAE != "STORESCP")
             {
@@ -307,12 +318,17 @@ namespace QueryRetrieve_SCP
 
             Logger.Info("..finished");
             yield return new DicomCMoveResponse(request, DicomStatus.Success);
+            */
         }
 
-
+  
         public IEnumerable<DicomCGetResponse> OnCGetRequest(DicomCGetRequest request)
         {
-            IDicomImageFinderService finderService = QRServer.CreateFinderService;
+            //sca currently not implemented so fail
+            yield return new DicomCGetResponse(request, DicomStatus.NoSuchActionType);
+            yield return new DicomCGetResponse(request, DicomStatus.ProcessingFailure);
+
+/*            IDicomImageFinderService finderService = QRServer.CreateFinderService;
             IEnumerable<string> matchingFiles = Enumerable.Empty<string>();
 
             switch (request.Level)
@@ -341,8 +357,10 @@ namespace QueryRetrieve_SCP
             }
 
             yield return new DicomCGetResponse(request, DicomStatus.Success);
+            */
         }
 
+        #endregion
 
     }
 }

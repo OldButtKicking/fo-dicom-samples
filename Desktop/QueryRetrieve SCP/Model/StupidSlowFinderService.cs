@@ -9,7 +9,7 @@ using System.Text.RegularExpressions;
 
 namespace QueryRetrieve_SCP.Model
 {
-    public class StupidSlowFinderService : IDicomImageFinderService
+    public class StupidSlowFinderService //: IDicomImageFinderService commented out as we modifued and this file is not required
     {
         private static readonly string StoragePath = @".\DICOM";
 

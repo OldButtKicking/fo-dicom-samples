@@ -60,6 +60,7 @@
       <HintPath>..\..\packages\fo-dicom.Desktop.4.0.2\lib\net45\Dicom.Core.dll</HintPath>
     </Reference>
     <Reference Include="System" />
+    <Reference Include="System.Configuration" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
@@ -72,7 +73,9 @@
     <Compile Include="..\..\SharedAssemblyInfo.cs">
       <Link>Properties\SharedAssemblyInfo.cs</Link>
     </Compile>
+    <Compile Include="Config.cs" />
     <Compile Include="Model\IDicomImageFinderService.cs" />
+    <Compile Include="Model\RISIMFinderService.cs" />
     <Compile Include="Model\StupidSlowFinderService.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
